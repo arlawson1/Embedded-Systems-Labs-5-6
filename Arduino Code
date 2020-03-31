@@ -1,0 +1,210 @@
+// This code was written by Andrew Lawson
+// CWID 11878092
+// This program gives 3 different options on how to
+// do a set of analog-to-digital conversions
+
+// WDT library
+#include <avr/wdt.h>
+
+// analog pin we are reading from in these labs
+#define analogPin A0
+
+// GLOBAL VARIABLES FOR INTERRUPT OPTION
+int startTime;
+int finishTime;
+int total_ISR_Time;
+int ISR_digital_value;
+
+void setup() {
+  // put your setup code here, to run once:
+  watchdogSetup();
+  Serial.begin(9600);
+  pinMode(analogPin, INPUT);
+  Serial.println("Board was reset");
+  Serial.println("Select a type of conversion to perform('a' for AnalogRead; 'b' for polling; 'c' for interrupts)");
+}
+
+void watchdogSetup(void){
+  // clear interrupts
+  cli();
+  wdt_reset();
+  // these 2 lines enable the WDT and set its timeout to 4 seconds
+  WDTCSR |= (1 << WDCE) | (1 << WDE);
+  WDTCSR = (1<<WDIE)|(1<<WDE)|(1<<WDP3)|(0<<WDP2)|(0<<WDP1)|(0<<WDP0);
+  // set interrupts
+  sei();
+  }
+
+// used to initialize the ADC status registers during the polling option
+void ADC_init(){
+  // selects the reference channel and enables the ADC
+  ADMUX = (1<<REFS0);
+  ADCSRA|=(1<<ADEN)|(1<<ADSC)|(1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0);
+  // complete reset of the ADC status register B
+  ADCSRB = 0x00;
+}
+
+// used to initialize the ADC status registers during the interrupt option
+void ISR_init(){
+  ADMUX = (1<<REFS0);
+  // ADC enabled; auto-conversions off; interrupts on; 128 prescaler value
+  ADCSRA = 0b10011111;
+  // complete reset of ADCSRB
+  ADCSRB = 0x00;
+  total_ISR_Time = 0;
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  String inputString = "";
+  int timeBefore;
+  int timeAfter;
+  int totalTime;
+  while(1){
+    if(Serial.available() > 0){
+      wdt_reset();
+      inputString = "";
+      inputString = Serial.readString();
+    }
+    if(inputString == "a"){
+      Serial.println("Starting a set of conversions using AnalogRead: ");
+      wdt_reset();
+      int analogVal = 0;
+      // One initial analogRead to get the ADC set up
+      analogVal = analogRead(analogPin);
+      for(int i = 0; i < 30; i++){
+        wdt_reset();
+        delay(500);
+        wdt_reset();
+        timeBefore = micros();
+        analogVal = analogRead(analogPin);
+        timeAfter = micros();
+        // totalTime later used to find average time
+        totalTime = totalTime + (timeAfter - timeBefore);
+        Serial.print("#");
+        // i < 9 used to keep numbers inline
+        if(i < 9){ Serial.print("0");}
+        Serial.print(i+1);
+        Serial.print(":     digital value = ");
+        // 0-15 are 1 digit in hex; this is used to keep numbers inline
+        if(analogVal < 16){ Serial.print("00"); }
+        // 16-255 are 2 digits in hex, this is used to keep numbers inline
+        else if(analogVal < 256){ Serial.print("0"); }
+        Serial.print(analogVal, HEX);
+        Serial.print("     Time = ");
+        Serial.print(timeAfter-timeBefore);
+        Serial.println(" usecs");
+        wdt_reset();
+      }
+      Serial.print("\n");
+      Serial.print("avg conversion time = ");
+      Serial.print(totalTime/30);
+      Serial.println(" usecs");
+      Serial.println("Select a type of conversion to perform('a' for AnalogRead; 'b' for polling; 'c' for interrupts)");
+      // end serial to hard stop all extra input, then start it again
+      Serial.end();
+      Serial.begin(9600);
+      // reset totalTime and inputString
+      totalTime = 0;
+      inputString = "";
+      wdt_reset();
+    }
+
+    if(inputString == "b"){
+      // our function defined at the top
+      ADC_init();
+      Serial.println("Starting a set of conversions using polling and port manipulation: ");
+      wdt_reset();
+      int analogVal = 0;
+      for(int i = 0; i < 30; i++){
+        wdt_reset();
+        delay(500);
+        wdt_reset();
+        timeBefore = micros();
+        ADCSRA = 0b11000111;
+        while(ADCSRA & (1<<ADSC));
+        timeAfter = micros();
+        analogVal = ADC;
+        totalTime += (timeAfter - timeBefore);
+        Serial.print("#");
+        // i < 9 used to keep numbers inline
+        if(i < 9){ Serial.print("0");}
+        Serial.print(i+1);
+        Serial.print(":     digital value = ");
+        // 0-15 are 1 digit in hex; this is used to keep numbers inline
+        if(analogVal < 16){ Serial.print("00"); }
+        // 16-255 are 2 digits in hex, this is used to keep numbers inline
+        else if(analogVal < 256){ Serial.print("0"); }
+        Serial.print(analogVal, HEX);
+        Serial.print("     Time = ");
+        Serial.print(timeAfter-timeBefore);
+        Serial.println(" usecs");
+        wdt_reset();
+      }
+      Serial.print("\n");
+      Serial.print("avg conversion time = ");
+      Serial.print(totalTime/30);
+      Serial.println(" usecs");
+      Serial.println("Select a type of conversion to perform('a' for AnalogRead; 'b' for polling; 'c' for interrupts)");
+      // end serial to hard stop all extra input, then start it again
+      Serial.end();
+      Serial.begin(9600);
+      // reset totalTime and inputString
+      totalTime = 0;
+      inputString = "";
+      wdt_reset();
+    }
+    
+    if(inputString == "c"){
+      // initialization function defined for the ADC ISR option
+      ISR_init();
+      Serial.println("Starting a set of conversions using interrupts: ");
+      wdt_reset();
+      int analogVal = 0;
+      for(int i = 0; i < 30; i++){
+        wdt_reset();
+        delay(500);
+        wdt_reset();
+        Serial.print("#");
+        // i < 9 used to keep numbers inline
+        if(i < 9){ Serial.print("0");}
+        Serial.print(i+1);
+        Serial.print(":     digital value = ");
+        startTime = micros();
+        ADCSRA = 0b11011111;
+      }
+      delay(500);
+      Serial.print("\n");
+      Serial.print("avg conversion time = ");
+      Serial.print(total_ISR_Time / 30);
+      Serial.println(" usecs");
+      Serial.println("Select a type of conversion to perform('a' for AnalogRead; 'b' for polling; 'c' for interrupts)");
+      // end serial to hard stop all extra input, then start it again
+      Serial.end();
+      Serial.begin(9600);
+      // reset totalTime and inputString
+      inputString = "";
+      wdt_reset();
+    }
+    
+    else if(inputString != ""){
+      Serial.println("Error: invalid user input - the only valid user inputs are 'a', 'b', and 'c'");
+      inputString = "";
+      wdt_reset();
+    }
+  }
+}
+
+ISR(ADC_vect){
+  finishTime = micros();
+  total_ISR_Time += (finishTime - startTime);
+  ISR_digital_value = ADC;
+  // 0-15 are 1 digit in hex; this is used to keep numbers inline
+  if(ISR_digital_value < 16){ Serial.print("00"); }
+  // 16-255 are 2 digits in hex, this is used to keep numbers inline
+  else if(ISR_digital_value < 256){ Serial.print("0"); }
+  Serial.print(ISR_digital_value, HEX);
+  Serial.print("     Time = ");
+  Serial.print(finishTime - startTime);
+  Serial.println(" usecs");
+}
