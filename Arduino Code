@@ -67,6 +67,8 @@ void loop() {
       inputString = Serial.readString();
     }
     if(inputString == "a"){
+      // initialization of the ADC status registers and reference channel
+      ADC_init();
       Serial.println("Starting a set of conversions using AnalogRead: ");
       wdt_reset();
       int analogVal = 0;
@@ -170,7 +172,9 @@ void loop() {
         if(i < 9){ Serial.print("0");}
         Serial.print(i+1);
         Serial.print(":     digital value = ");
+        // global variable to track the start time of the conversion
         startTime = micros();
+        // start conversion bit = 1; interrupt enable bit = 1; interrupt flag bit = 1;
         ADCSRA = 0b11011111;
       }
       delay(500);
@@ -182,7 +186,9 @@ void loop() {
       // end serial to hard stop all extra input, then start it again
       Serial.end();
       Serial.begin(9600);
-      // reset totalTime and inputString
+      ADCSRA = 0x00;
+      // reset total_ISR_Time and inputString
+      total_ISR_Time = 0;
       inputString = "";
       wdt_reset();
     }
@@ -196,8 +202,11 @@ void loop() {
 }
 
 ISR(ADC_vect){
+  // global variable to track the end time of the conversion
   finishTime = micros();
+  // global variable to track total time (for avg time at the end)
   total_ISR_Time += (finishTime - startTime);
+  // Set variable equal to ADC data register
   ISR_digital_value = ADC;
   // 0-15 are 1 digit in hex; this is used to keep numbers inline
   if(ISR_digital_value < 16){ Serial.print("00"); }
